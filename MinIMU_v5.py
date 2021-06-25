@@ -120,6 +120,7 @@ class MinIMU_v5:
         
         #Variables for updateAngle and updateYaw
         self.prevAngle = [0,0,0] #x, y, z (roll, pitch, yaw)
+        self.prevGAngle = [0, 0, 0]  
         self.prevYaw = 0
         self.tau = 0.04 #Want this roughly 10x the dt
         self.lastTimeAngle = [0]
@@ -174,21 +175,22 @@ class MinIMU_v5:
         b0_3 = gOdr
         
         # full-scale selection
-        if gFullScale == 254:
+        #  See table 3 page 15 of the data sheet for the gScale (converted from mdps to dps)
+        if gFullScale == 245:
             b4_6 = 0b000
-            self.gScale = 254/32768.0
+            self.gScale = 0.00875
         elif gFullScale == 1000:
             b4_6 = 0b100
-            self.gScale = 1000/32768.0
+            self.gScale = 0.035
         elif gFullScale == 2000:
             b4_6 = 0b110
-            self.gScale = 2000/32768.0
+            self.gScale = 0.07
         elif gFullScale == 125:
             b4_6 = 0b001
-            self.gScale = 125/32768.0
+            self.gScale = 0.004375
         else: #default to 500 dps if no valid value is given
             b4_6 = 0b010
-            self.gScale = 500/32768.0
+            self.gScale = 0.0175
             
         # Write CTRL2_G
         self.i2c.writeto_mem(self.accel_gyro, self.Accel_Gyro_REG['CTRL2_G'], bytes([b0_3 << 4 | b4_6 << 1]))
@@ -196,7 +198,6 @@ class MinIMU_v5:
         #Accelerometer and Gyro
 
         #default: 0b00000100
-        #IF_INC = 1 (automatically increment register address)
         self.i2c.writeto_mem(self.accel_gyro, self.Accel_Gyro_REG['CTRL3_C'], bytes([0b00000100]))
 
 
@@ -432,9 +433,26 @@ class MinIMU_v5:
         return zAngle
 
 
+    """Read an absolute angle from the Gyro only"""
+    def gyroAngle(self):
+        [Gx_w, Gy_w, Gz_w] = self.readGyro()
 
+        if self.lastTimeAngle[0] == 0: #If this is the first time using updatePos
+            self.lastTimeAngle[0] = utime.ticks_ms()
+            
+        #Find the angle change given by the Gyro
+        dt = (utime.ticks_ms() - self.lastTimeAngle[0]) / 1000
+        Gx = self.prevGAngle[0] + (Gx_w * dt)
+        Gy = self.prevGAngle[1] + (Gy_w * dt)
+        Gz = self.prevGAngle[2] + (Gz_w * dt)
 
+        self.prevGAngle = [Gx, Gy, Gz]
 
+        #Update time for dt calculations
+        self.lastTimeAngle[0] = utime.ticks_ms()
+        
+
+        return Gx, Gy, Gz
 
 
 
